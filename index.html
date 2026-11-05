@@ -1,0 +1,1631 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lasier Darski · Engenharia de Sistemas de Aviação &amp; Software Aeroespacial</title>
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'bg-primary':    '#0D0F12',
+            'bg-card':       '#11141A',
+            'bg-card-alt':   '#161A22',
+            'alert-yellow':  '#FFC107',
+            'radar-green':   '#00FF66',
+            'electric-blue': '#00D5FF',
+            'dim':           '#8A9BB0',
+          },
+          fontFamily: {
+            mono: ['"Courier New"', 'Courier', 'monospace'],
+            sans: ['Helvetica Neue', 'Helvetica', 'Arial', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <!-- Three.js via CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
+
+  <style>
+    /* ===================================================================
+       CSS CUSTOM PROPERTIES — Mode palettes
+       =================================================================== */
+    :root {
+      --accent-1: #00FF66;    /* radar green */
+      --accent-2: #00D5FF;    /* electric blue */
+      --accent-3: #FFC107;    /* alert yellow */
+      --dim:      #8A9BB0;
+      --bg:       #0D0F12;
+      --bg-card:  rgba(17,20,26,0.85);
+      --sweep-color: rgba(0,255,102,0.045);
+      --sweep-mid:   rgba(0,213,255,0.06);
+      --scanline:    rgba(0,255,102,0.018);
+      --mode-label: "RADAR";
+    }
+    [data-mode="infrared"] {
+      --accent-1: #FF6B35;
+      --accent-2: #FF3D00;
+      --accent-3: #FFAB00;
+      --dim:      #BF8A60;
+      --sweep-color: rgba(255,107,53,0.05);
+      --sweep-mid:   rgba(255,61,0,0.06);
+      --scanline:    rgba(255,107,53,0.02);
+      --mode-label: "INFRARED";
+    }
+    [data-mode="night"] {
+      --accent-1: #7C4DFF;
+      --accent-2: #448AFF;
+      --accent-3: #69F0AE;
+      --dim:      #7986A0;
+      --sweep-color: rgba(124,77,255,0.04);
+      --sweep-mid:   rgba(68,138,255,0.05);
+      --scanline:    rgba(124,77,255,0.015);
+      --mode-label: "NIGHT VISION";
+    }
+
+    /* ===================================================================
+       GLOBAL
+       =================================================================== */
+    *, *::before, *::after { box-sizing: border-box; }
+    html { height: 100%; cursor: none; }
+    body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: #E0E6ED;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      overflow-x: hidden;
+      line-height: 1.7;
+      cursor: none;
+    }
+    a, button { cursor: none; }
+
+    /* ===================================================================
+       CUSTOM HUD CURSOR (Feature 02)
+       =================================================================== */
+    .hud-cursor {
+      position: fixed;
+      pointer-events: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+      transition: opacity .2s ease;
+    }
+    .hud-cursor .crosshair {
+      position: relative;
+      width: 36px;
+      height: 36px;
+    }
+    /* vertical line */
+    .hud-cursor .crosshair::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 50%;
+      width: 1px; height: 100%;
+      background: var(--accent-1);
+      transform: translateX(-50%);
+      opacity: 0.7;
+    }
+    /* horizontal line */
+    .hud-cursor .crosshair::after {
+      content: '';
+      position: absolute;
+      top: 50%; left: 0;
+      width: 100%; height: 1px;
+      background: var(--accent-1);
+      transform: translateY(-50%);
+      opacity: 0.7;
+    }
+    /* corner brackets */
+    .hud-cursor .c-tl, .hud-cursor .c-tr,
+    .hud-cursor .c-bl, .hud-cursor .c-br {
+      position: absolute;
+      width: 8px; height: 8px;
+    }
+    .hud-cursor .c-tl { top: 2px; left: 2px; border-top: 1.5px solid var(--accent-1); border-left: 1.5px solid var(--accent-1); }
+    .hud-cursor .c-tr { top: 2px; right: 2px; border-top: 1.5px solid var(--accent-1); border-right: 1.5px solid var(--accent-1); }
+    .hud-cursor .c-bl { bottom: 2px; left: 2px; border-bottom: 1.5px solid var(--accent-1); border-left: 1.5px solid var(--accent-1); }
+    .hud-cursor .c-br { bottom: 2px; right: 2px; border-bottom: 1.5px solid var(--accent-1); border-right: 1.5px solid var(--accent-1); }
+    /* center dot */
+    .hud-cursor .center-dot {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 3px; height: 3px;
+      background: var(--accent-3);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+    }
+    /* coordinates */
+    .hud-cursor .coords {
+      position: absolute;
+      top: 100%; left: 50%;
+      transform: translateX(-50%);
+      margin-top: 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 9px;
+      color: var(--accent-1);
+      opacity: 0.7;
+      white-space: nowrap;
+      letter-spacing: 0.1em;
+    }
+
+    /* hide custom cursor on touch devices */
+    @media (hover: none) and (pointer: coarse) {
+      html, body, a, button { cursor: auto; }
+      .hud-cursor { display: none; }
+    }
+
+    /* ===================================================================
+       THREE.JS CANVAS
+       =================================================================== */
+    #three-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* ===================================================================
+       RADAR SWEEP
+       =================================================================== */
+    .radar-sweep {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .radar-sweep::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      width: 100%;
+      height: 120px;
+      background: linear-gradient(
+        180deg,
+        transparent 0%,
+        var(--sweep-color) 40%,
+        var(--sweep-mid) 50%,
+        var(--sweep-color) 60%,
+        transparent 100%
+      );
+      animation: sweep 5s linear infinite;
+    }
+    @keyframes sweep {
+      0%   { top: -120px; }
+      100% { top: calc(100% + 120px); }
+    }
+
+    .scanlines {
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent,
+        transparent 2px,
+        var(--scanline) 2px,
+        var(--scanline) 4px
+      );
+    }
+
+    /* ===================================================================
+       CONTENT WRAPPER
+       =================================================================== */
+    .content-layer {
+      position: relative;
+      z-index: 10;
+    }
+
+    /* ===================================================================
+       HUD BOX
+       =================================================================== */
+    .hud-box {
+      position: relative;
+      background: var(--bg-card);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      border: 1px solid color-mix(in srgb, var(--accent-1) 15%, transparent);
+      border-radius: 6px;
+      padding: 2rem;
+      margin-bottom: 2.5rem;
+      transition: border-color .3s ease, box-shadow .3s ease;
+    }
+    .hud-box:hover {
+      border-color: color-mix(in srgb, var(--accent-2) 35%, transparent);
+      box-shadow: 0 0 20px color-mix(in srgb, var(--accent-2) 6%, transparent);
+    }
+
+    .hud-box::before,
+    .hud-box::after,
+    .hud-box > .corner-bl,
+    .hud-box > .corner-br {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      pointer-events: none;
+    }
+    .hud-box::before {
+      content: '';
+      top: -1px; left: -1px;
+      border-top: 2px solid var(--accent-1);
+      border-left: 2px solid var(--accent-1);
+      border-top-left-radius: 4px;
+    }
+    .hud-box::after {
+      content: '';
+      top: -1px; right: -1px;
+      border-top: 2px solid var(--accent-1);
+      border-right: 2px solid var(--accent-1);
+      border-top-right-radius: 4px;
+    }
+    .hud-box > .corner-bl {
+      bottom: -1px; left: -1px;
+      border-bottom: 2px solid var(--accent-1);
+      border-left: 2px solid var(--accent-1);
+      border-bottom-left-radius: 4px;
+    }
+    .hud-box > .corner-br {
+      bottom: -1px; right: -1px;
+      border-bottom: 2px solid var(--accent-1);
+      border-right: 2px solid var(--accent-1);
+      border-bottom-right-radius: 4px;
+    }
+
+    /* ===================================================================
+       SECTION TITLES
+       =================================================================== */
+    .section-tag {
+      display: inline-block;
+      font-family: 'Courier New', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--accent-1);
+      background: color-mix(in srgb, var(--accent-1) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--accent-1) 20%, transparent);
+      padding: 0.2rem 0.7rem;
+      border-radius: 3px;
+      margin-bottom: 0.75rem;
+    }
+    .section-title {
+      font-family: 'Courier New', monospace;
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--accent-2);
+      margin: 0 0 1rem 0;
+    }
+
+    /* ===================================================================
+       DATA TABLE
+       =================================================================== */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .data-table thead th {
+      background: color-mix(in srgb, var(--accent-2) 7%, transparent);
+      color: var(--accent-3);
+      font-family: 'Courier New', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      padding: 0.6rem 0.8rem;
+      border-bottom: 2px solid color-mix(in srgb, var(--accent-1) 20%, transparent);
+      text-align: left;
+    }
+    .data-table tbody td {
+      padding: 0.65rem 0.8rem;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      vertical-align: top;
+    }
+    .data-table tbody tr {
+      transition: background .2s ease;
+    }
+    .data-table tbody tr:hover {
+      background: color-mix(in srgb, var(--accent-2) 4%, transparent);
+    }
+    .data-table .phase-id {
+      font-family: 'Courier New', monospace;
+      color: var(--accent-3);
+      white-space: nowrap;
+      font-weight: 700;
+    }
+    .data-table .tools-cell {
+      font-family: 'Courier New', monospace;
+      color: var(--accent-1);
+      font-size: 0.78rem;
+    }
+
+    /* ===================================================================
+       STATUS BADGE
+       =================================================================== */
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-family: 'Courier New', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: 0.35; }
+    }
+
+    /* ===================================================================
+       PROJECT CARD
+       =================================================================== */
+    .project-card {
+      background: rgba(22,26,34,0.7);
+      border: 1px solid color-mix(in srgb, var(--accent-1) 10%, transparent);
+      border-radius: 6px;
+      padding: 1.5rem;
+      transition: border-color .3s ease, transform .3s ease;
+    }
+    .project-card:hover {
+      border-color: color-mix(in srgb, var(--accent-3) 35%, transparent);
+      transform: translateY(-3px);
+    }
+    .project-card h3 {
+      font-family: 'Courier New', monospace;
+      color: var(--accent-3);
+      font-size: 1rem;
+      margin: 0 0 0.5rem 0;
+      letter-spacing: 0.05em;
+    }
+    .project-card p {
+      color: var(--dim);
+      font-size: 0.88rem;
+      margin: 0 0 0.8rem 0;
+    }
+
+    .tag {
+      display: inline-block;
+      font-family: 'Courier New', monospace;
+      font-size: 0.65rem;
+      color: var(--accent-2);
+      border: 1px solid color-mix(in srgb, var(--accent-2) 25%, transparent);
+      padding: 0.15rem 0.5rem;
+      border-radius: 3px;
+      margin: 0.15rem 0.2rem 0.15rem 0;
+      letter-spacing: 0.05em;
+    }
+
+    /* ===================================================================
+       SKILL BAR
+       =================================================================== */
+    .skill-row {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      margin-bottom: 0.75rem;
+    }
+    .skill-label {
+      font-family: 'Courier New', monospace;
+      font-size: 0.78rem;
+      color: var(--accent-3);
+      width: 130px;
+      flex-shrink: 0;
+      text-align: right;
+    }
+    .skill-track {
+      flex: 1;
+      height: 4px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .skill-fill {
+      height: 100%;
+      border-radius: 2px;
+      background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
+      transition: width 1.2s ease;
+      width: 0;
+    }
+
+    /* ===================================================================
+       TIMELINE
+       =================================================================== */
+    .timeline {
+      position: relative;
+      padding-left: 2rem;
+    }
+    .timeline::before {
+      content: '';
+      position: absolute;
+      top: 0; bottom: 0; left: 7px;
+      width: 2px;
+      background: linear-gradient(180deg, var(--accent-1) 0%, var(--accent-2) 50%, color-mix(in srgb, var(--accent-2) 10%, transparent) 100%);
+    }
+    .timeline-item {
+      position: relative;
+      margin-bottom: 2rem;
+    }
+    .timeline-item::before {
+      content: '';
+      position: absolute;
+      left: -2rem;
+      top: 0.35rem;
+      width: 10px; height: 10px;
+      background: var(--bg);
+      border: 2px solid var(--accent-1);
+      border-radius: 50%;
+    }
+    .timeline-item .tl-date {
+      font-family: 'Courier New', monospace;
+      font-size: 0.7rem;
+      color: var(--accent-1);
+      letter-spacing: 0.1em;
+    }
+    .timeline-item .tl-title {
+      font-family: 'Courier New', monospace;
+      color: var(--accent-3);
+      font-size: 0.95rem;
+      margin: 0.2rem 0;
+    }
+    .timeline-item .tl-desc {
+      color: var(--dim);
+      font-size: 0.85rem;
+    }
+
+    /* ===================================================================
+       NAV
+       =================================================================== */
+    .nav-bar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 50;
+      background: rgba(13,15,18,0.88);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-bottom: 1px solid color-mix(in srgb, var(--accent-1) 8%, transparent);
+      transition: transform .3s ease;
+    }
+    .nav-bar.hidden-nav {
+      transform: translateY(-100%);
+    }
+    .nav-link {
+      font-family: 'Courier New', monospace;
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--dim);
+      text-decoration: none;
+      padding: 0.5rem 0;
+      position: relative;
+      transition: color .25s ease;
+    }
+    .nav-link:hover,
+    .nav-link.active {
+      color: var(--accent-2);
+    }
+    .nav-link::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 0; height: 1px;
+      background: var(--accent-2);
+      transition: width .3s ease;
+    }
+    .nav-link:hover::after,
+    .nav-link.active::after {
+      width: 100%;
+    }
+
+    /* ===================================================================
+       MODE TOGGLE BUTTON (Feature 07)
+       =================================================================== */
+    .mode-btn {
+      font-family: 'Courier New', monospace;
+      font-size: 0.6rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent-1);
+      background: color-mix(in srgb, var(--accent-1) 10%, transparent);
+      border: 1px solid color-mix(in srgb, var(--accent-1) 30%, transparent);
+      padding: 0.3rem 0.65rem;
+      border-radius: 3px;
+      transition: all .3s ease;
+      white-space: nowrap;
+    }
+    .mode-btn:hover {
+      background: color-mix(in srgb, var(--accent-1) 18%, transparent);
+      border-color: var(--accent-1);
+    }
+    .mode-indicator {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent-1);
+      margin-right: 4px;
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+
+    /* ===================================================================
+       AUDIO BUTTON
+       =================================================================== */
+    .audio-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: 'Courier New', monospace;
+      font-size: 0.78rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--bg);
+      background: var(--accent-1);
+      border: none;
+      padding: 0.6rem 1.4rem;
+      border-radius: 4px;
+      transition: background .25s ease, transform .15s ease;
+    }
+    .audio-btn:hover {
+      background: var(--accent-2);
+      transform: scale(1.03);
+    }
+    .audio-btn.playing {
+      background: var(--accent-3);
+    }
+    .audio-eq {
+      display: inline-flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 14px;
+    }
+    .audio-eq span {
+      display: block;
+      width: 3px;
+      background: var(--bg);
+      border-radius: 1px;
+    }
+    .audio-btn.playing .audio-eq span {
+      animation: eq-bar 0.8s ease-in-out infinite alternate;
+    }
+    .audio-eq span:nth-child(1) { height: 4px; animation-delay: 0s; }
+    .audio-eq span:nth-child(2) { height: 8px; animation-delay: 0.15s; }
+    .audio-eq span:nth-child(3) { height: 5px; animation-delay: 0.3s; }
+    .audio-eq span:nth-child(4) { height: 10px; animation-delay: 0.1s; }
+    .audio-eq span:nth-child(5) { height: 6px; animation-delay: 0.25s; }
+    @keyframes eq-bar {
+      0%   { height: 3px; }
+      100% { height: 14px; }
+    }
+
+    /* ===================================================================
+       TYPEWRITER (Feature 04)
+       =================================================================== */
+    .typewriter {
+      overflow: hidden;
+      white-space: nowrap;
+      border-right: 2px solid var(--accent-3);
+      animation: blink-caret 0.75s step-end infinite;
+      display: inline-block;
+      width: 0;
+    }
+    .typewriter.done {
+      border-right-color: transparent;
+      animation: none;
+      width: auto;
+    }
+    @keyframes blink-caret {
+      0%, 100% { border-color: var(--accent-3); }
+      50%      { border-color: transparent; }
+    }
+
+    .typewriter-section {
+      visibility: hidden;
+    }
+    .typewriter-section.typed {
+      visibility: visible;
+    }
+
+    /* ===================================================================
+       WARP SPEED (Feature 06 — Konami Code)
+       =================================================================== */
+    .warp-flash {
+      position: fixed;
+      inset: 0;
+      z-index: 9998;
+      pointer-events: none;
+      background: radial-gradient(ellipse at center, rgba(0,213,255,0.15) 0%, transparent 70%);
+      opacity: 0;
+      animation: warp-flash-anim 3s ease-out forwards;
+    }
+    @keyframes warp-flash-anim {
+      0%   { opacity: 0; }
+      15%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    .konami-toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9998;
+      font-family: 'Courier New', monospace;
+      font-size: 0.75rem;
+      letter-spacing: 0.2em;
+      color: var(--accent-3);
+      background: rgba(13,15,18,0.92);
+      border: 1px solid var(--accent-3);
+      padding: 0.6rem 1.5rem;
+      border-radius: 4px;
+      pointer-events: none;
+      animation: toast-in 3s ease forwards;
+    }
+    @keyframes toast-in {
+      0%   { opacity: 0; transform: translateX(-50%) translateY(20px); }
+      15%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+      85%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    /* ===================================================================
+       SCROLL REVEAL
+       =================================================================== */
+    .reveal {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: opacity 0.7s ease, transform 0.7s ease;
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ===================================================================
+       METRIC COUNTER (Feature 12)
+       =================================================================== */
+    .metric-value {
+      font-family: 'Courier New', monospace;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--accent-2);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ===================================================================
+       RESPONSIVE
+       =================================================================== */
+    @media (max-width: 640px) {
+      .section-title { font-size: 1.25rem; }
+      .hud-box { padding: 1.2rem; }
+      .skill-label { width: 90px; font-size: 0.68rem; }
+      .data-table { font-size: 0.75rem; }
+      .data-table thead th,
+      .data-table tbody td { padding: 0.4rem 0.5rem; }
+      .hero-title { font-size: 2rem !important; }
+      .hero-sub { font-size: 0.9rem !important; }
+    }
+  </style>
+</head>
+
+<body data-mode="default">
+
+<!-- ================================================================= -->
+<!-- HUD CURSOR (Feature 02)                                           -->
+<!-- ================================================================= -->
+<div class="hud-cursor" id="hud-cursor">
+  <div class="crosshair">
+    <div class="c-tl"></div>
+    <div class="c-tr"></div>
+    <div class="c-bl"></div>
+    <div class="c-br"></div>
+    <div class="center-dot"></div>
+  </div>
+  <div class="coords" id="cursor-coords">X:0000 Y:0000</div>
+</div>
+
+<!-- ================================================================= -->
+<!-- THREE.JS CANVAS                                                   -->
+<!-- ================================================================= -->
+<canvas id="three-bg"></canvas>
+
+<!-- Radar sweep + scan-lines -->
+<div class="radar-sweep"></div>
+<div class="scanlines"></div>
+
+<!-- ================================================================= -->
+<!-- NAV BAR                                                           -->
+<!-- ================================================================= -->
+<nav class="nav-bar" id="navbar">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between h-12">
+    <span class="font-mono text-[0.7rem] tracking-[0.2em] font-bold" style="color:var(--accent-3)">LD://SYS</span>
+    <div class="flex items-center gap-3 sm:gap-5">
+      <a href="#about"     class="nav-link hidden sm:inline-block">Sobre</a>
+      <a href="#lifecycle"  class="nav-link hidden sm:inline-block">Ciclo</a>
+      <a href="#projects"  class="nav-link hidden sm:inline-block">Projetos</a>
+      <a href="#skills"    class="nav-link hidden sm:inline-block">Skills</a>
+      <a href="#career"    class="nav-link hidden sm:inline-block">Trajetória</a>
+      <a href="#audio"     class="nav-link hidden sm:inline-block">Áudio</a>
+      <button class="mode-btn" id="mode-btn" title="Alternar modo de visão">
+        <span class="mode-indicator"></span>
+        <span id="mode-label">RADAR</span>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- ================================================================= -->
+<!-- CONTENT                                                           -->
+<!-- ================================================================= -->
+<main class="content-layer max-w-5xl mx-auto px-4 sm:px-6 pt-20 pb-16">
+
+  <!-- ============================================================= -->
+  <!-- HERO                                                          -->
+  <!-- ============================================================= -->
+  <section class="hud-box text-center py-16 sm:py-24 reveal" id="hero">
+    <div class="corner-bl"></div><div class="corner-br"></div>
+
+    <div class="status justify-center mb-4" style="color:var(--accent-1)">
+      <span class="status-dot" style="background:var(--accent-1)"></span>
+      sistemas operacionais
+    </div>
+
+    <h1 class="hero-title font-mono text-4xl sm:text-5xl md:text-6xl font-bold tracking-wider leading-tight"
+        style="color:var(--accent-3)">
+      <span class="typewriter" id="hero-name" data-text="Lasier Darski"></span>
+    </h1>
+
+    <p class="hero-sub mt-3 text-base sm:text-lg max-w-xl mx-auto" style="color:var(--dim)">
+      <span class="typewriter" id="hero-subtitle" data-text="Engenheiro de Sistemas de Aviação & Software Aeroespacial"></span>
+    </p>
+
+    <div class="mt-6 flex flex-wrap justify-center gap-2" id="hero-tags" style="opacity:0; transition: opacity 0.8s ease;">
+      <span class="tag">Telemetria</span>
+      <span class="tag">Controle de Voo</span>
+      <span class="tag">Sistemas Embarcados</span>
+      <span class="tag">Simulação</span>
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <!-- SOBRE                                                         -->
+  <!-- ============================================================= -->
+  <section id="about" class="hud-box reveal">
+    <div class="corner-bl"></div><div class="corner-br"></div>
+    <span class="section-tag">// Briefing</span>
+    <h2 class="section-title typewriter-section" data-typetext="Sobre">Sobre</h2>
+    <p style="color:var(--dim)" class="leading-relaxed">
+      Especialista em arquitetura de sistemas críticos para missões aeroespaciais, com foco em
+      controle de voo, telemetria em tempo real e integração de subsistemas embarcados
+      em ambientes de alta confiabilidade. Experiência consolidada no ciclo de vida
+      completo de projetos — da concepção de requisitos de missão à validação em voo —
+      utilizando padrões DO‑178C, ECSS e CCSDS.
+    </p>
+    <p style="color:var(--dim)" class="leading-relaxed mt-4">
+      Apaixonado por transformar requisitos de missão complexos em soluções de software
+      robustas, eficientes e verificáveis, operando na interseção entre engenharia
+      de software e engenharia aeroespacial.
+    </p>
+
+    <!-- Metrics with counter animation (Feature 12) -->
+    <div class="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+      <div>
+        <div class="metric-value" data-count-to="8" data-suffix="+">0</div>
+        <div style="color:var(--dim)" class="text-xs font-mono mt-1">ANOS EXP.</div>
+      </div>
+      <div>
+        <div class="metric-value" data-count-to="12" data-suffix="">0</div>
+        <div style="color:var(--dim)" class="text-xs font-mono mt-1">MISSÕES</div>
+      </div>
+      <div>
+        <div class="metric-value" data-count-to="5" data-suffix="">0</div>
+        <div style="color:var(--dim)" class="text-xs font-mono mt-1">PUBLICAÇÕES</div>
+      </div>
+      <div>
+        <div class="metric-value" data-count-to="99.97" data-suffix="%" data-decimals="2">0</div>
+        <div style="color:var(--dim)" class="text-xs font-mono mt-1">UPTIME SYS</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <!-- CICLO DE VIDA                                                 -->
+  <!-- ============================================================= -->
+  <section id="lifecycle" class="hud-box reveal">
+    <div class="corner-bl"></div><div class="corner-br"></div>
+    <span class="section-tag">// Mission Lifecycle</span>
+    <h2 class="section-title typewriter-section" data-typetext="Ciclo de Vida de Projetos">Ciclo de Vida de Projetos</h2>
+
+    <div class="overflow-x-auto -mx-2">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Fase</th>
+            <th>Descrição</th>
+            <th>Status</th>
+            <th>Ferramentas</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="phase-id">01 — CONCEPÇÃO</td>
+            <td style="color:var(--dim)">Definição de requisitos de missão, análise de viabilidade técnica e mapeamento de restrições operacionais.</td>
+            <td>
+              <span class="status" style="color:var(--accent-1)">
+                <span class="status-dot" style="background:var(--accent-1)"></span> nominal
+              </span>
+            </td>
+            <td class="tools-cell">MATLAB · SysML · DOORS</td>
+          </tr>
+          <tr>
+            <td class="phase-id">02 — PROJETO</td>
+            <td style="color:var(--dim)">Arquitetura de software embarcado, design de interfaces de telemetria e protocolos de comunicação.</td>
+            <td>
+              <span class="status" style="color:var(--accent-1)">
+                <span class="status-dot" style="background:var(--accent-1)"></span> nominal
+              </span>
+            </td>
+            <td class="tools-cell">UML · C++17 · ROS 2</td>
+          </tr>
+          <tr>
+            <td class="phase-id">03 — IMPLEMENTAÇÃO</td>
+            <td style="color:var(--dim)">Codificação de módulos críticos DO‑178C nível A, testes unitários e análise estática de código.</td>
+            <td>
+              <span class="status" style="color:var(--accent-1)">
+                <span class="status-dot" style="background:var(--accent-1)"></span> nominal
+              </span>
+            </td>
+            <td class="tools-cell">Git · CMake · GTest · LDRA</td>
+          </tr>
+          <tr>
+            <td class="phase-id">04 — INTEGRAÇÃO</td>
+            <td style="color:var(--dim)">Integração hardware‑in‑the‑loop, verificação de interfaces e simulações de missão end‑to‑end.</td>
+            <td>
+              <span class="status" style="color:var(--accent-3)">
+                <span class="status-dot" style="background:var(--accent-3)"></span> em curso
+              </span>
+            </td>
+            <td class="tools-cell">Simulink · dSPACE · JTAG</td>
+          </tr>
+          <tr>
+            <td class="phase-id">05 — VALIDAÇÃO</td>
+            <td style="color:var(--dim)">Testes de voo, análise de desempenho em órbita e correlação de modelos preditivos.</td>
+            <td>
+              <span class="status" style="color:var(--accent-2)">
+                <span class="status-dot" style="background:var(--accent-2)"></span> planejado
+              </span>
+            </td>
+            <td class="tools-cell">Python · Pandas · Grafana</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <!-- PROJETOS                                                      -->
+  <!-- ============================================================= -->
+  <section id="projects" class="reveal">
+    <div class="hud-box">
+      <div class="corner-bl"></div><div class="corner-br"></div>
+      <span class="section-tag">// Missions Log</span>
+      <h2 class="section-title typewriter-section" data-typetext="Projetos em Destaque">Projetos em Destaque</h2>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mb-10">
+      <article class="project-card reveal">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="status text-[0.6rem]" style="color:var(--accent-1)">
+            <span class="status-dot" style="background:var(--accent-1);width:5px;height:5px"></span> ATIVO
+          </span>
+          <span class="font-mono text-[0.6rem]" style="color:var(--dim)">ID: MSN-2024-OE</span>
+        </div>
+        <h3>OrbitEdge — Sistema de Telemetria LEO</h3>
+        <p>
+          Plataforma distribuída baseada em ROS‑2 para coleta, compressão
+          adaptativa e transmissão de dados de satélites em órbita baixa,
+          com suporte completo a pacotes CCSDS e redundância hot-standby.
+        </p>
+        <div class="flex flex-wrap">
+          <span class="tag">C++17</span>
+          <span class="tag">ZeroMQ</span>
+          <span class="tag">CCSDS</span>
+          <span class="tag">ROS 2</span>
+          <span class="tag">React</span>
+        </div>
+      </article>
+
+      <article class="project-card reveal">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="status text-[0.6rem]" style="color:var(--accent-1)">
+            <span class="status-dot" style="background:var(--accent-1);width:5px;height:5px"></span> ATIVO
+          </span>
+          <span class="font-mono text-[0.6rem]" style="color:var(--dim)">ID: MSN-2023-AS</span>
+        </div>
+        <h3>AeroSim — Simulador de Voo Hi-Fi</h3>
+        <p>
+          Simulador de voo de alta fidelidade para treinamento de pilotos
+          de caça, com modelos aerodinâmicos derivados de CFD e integração
+          nativa com hardware de cockpit e feedback háptico.
+        </p>
+        <div class="flex flex-wrap">
+          <span class="tag">Unity</span>
+          <span class="tag">C#</span>
+          <span class="tag">HLSL</span>
+          <span class="tag">CFD</span>
+          <span class="tag">Haptics</span>
+        </div>
+      </article>
+
+      <article class="project-card reveal">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="status text-[0.6rem]" style="color:var(--accent-3)">
+            <span class="status-dot" style="background:var(--accent-3);width:5px;height:5px"></span> DEV
+          </span>
+          <span class="font-mono text-[0.6rem]" style="color:var(--dim)">ID: MSN-2025-GN</span>
+        </div>
+        <h3>GNC-Core — Guiagem, Navegação &amp; Controle</h3>
+        <p>
+          Módulo embarcado de GNC para micro-satélites, implementando
+          filtros de Kalman estendidos e controle PID adaptativo para
+          manobras de atitude com precisão sub-grau.
+        </p>
+        <div class="flex flex-wrap">
+          <span class="tag">C</span>
+          <span class="tag">FreeRTOS</span>
+          <span class="tag">Kalman</span>
+          <span class="tag">PID</span>
+          <span class="tag">ARM Cortex-M</span>
+        </div>
+      </article>
+
+      <article class="project-card reveal">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="status text-[0.6rem]" style="color:var(--accent-2)">
+            <span class="status-dot" style="background:var(--accent-2);width:5px;height:5px"></span> CONCLUÍDO
+          </span>
+          <span class="font-mono text-[0.6rem]" style="color:var(--dim)">ID: MSN-2022-RF</span>
+        </div>
+        <h3>RadarForge — Processamento de Sinais RF</h3>
+        <p>
+          Pipeline de processamento de sinais de radar banda-S para
+          rastreamento de detritos orbitais, com detecção de alvos
+          baseada em CFAR e visualização em tempo real.
+        </p>
+        <div class="flex flex-wrap">
+          <span class="tag">Python</span>
+          <span class="tag">NumPy</span>
+          <span class="tag">CUDA</span>
+          <span class="tag">SDR</span>
+          <span class="tag">Grafana</span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <!-- SKILLS                                                        -->
+  <!-- ============================================================= -->
+  <section id="skills" class="hud-box reveal">
+    <div class="corner-bl"></div><div class="corner-br"></div>
+    <span class="section-tag">// Subsystems Check</span>
+    <h2 class="section-title typewriter-section" data-typetext="Competências Técnicas">Competências Técnicas</h2>
+
+    <div class="grid sm:grid-cols-2 gap-x-8 gap-y-1">
+      <div class="skill-row">
+        <span class="skill-label">C / C++</span>
+        <div class="skill-track"><div class="skill-fill" data-width="95"></div></div>
+      </div>
+      <div class="skill-row">
+        <span class="skill-label">Python</span>
+        <div class="skill-track"><div class="skill-fill" data-width="90"></div></div>
+      </div>
+      <div class="skill-row">
+        <span class="skill-label">MATLAB</span>
+        <div class="skill-track"><div class="skill-fill" data-width="85"></div></div>
+      </div>
+      <div class="skill-row">
+        <span class="skill-label">ROS 2</span>
+        <div class="skill-track"><div class="skill-fill" data-width="80"></div></div>
+      </div>
+      <div class="skill-row">
+        <span class="skill-label">Simulink</span>
+        <div class="skill-track"><div class="skill-fill" data-width="80"></div></div>
+      </div>
+      <div class="skill-row">
+        <span class="skill-label">DO-178C</span>
+        <div class="skill-track"><div class="skill-fill" data-width="88"></div></div>
+      </div>
+      <div class="skill-row">
+        <span class="skill-label">Git / CI-CD</span>
+        <div class="skill-track"><div class="skill-fill" data-width="92"></div></div>
+      </div>
+      <div class="skill-row">
+        <span class="skill-label">FreeRTOS</span>
+        <div class="skill-track"><div class="skill-fill" data-width="75"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <!-- TRAJETÓRIA                                                    -->
+  <!-- ============================================================= -->
+  <section id="career" class="hud-box reveal">
+    <div class="corner-bl"></div><div class="corner-br"></div>
+    <span class="section-tag">// Flight Log</span>
+    <h2 class="section-title typewriter-section" data-typetext="Trajetória Profissional">Trajetória Profissional</h2>
+
+    <div class="timeline">
+      <div class="timeline-item">
+        <div class="tl-date">2022 — presente</div>
+        <div class="tl-title">Engenheiro de Software Aeroespacial Sênior</div>
+        <div class="tl-desc">Arquitetura de sistemas de telemetria e GNC para constelações de micro-satélites LEO.</div>
+      </div>
+      <div class="timeline-item">
+        <div class="tl-date">2019 — 2022</div>
+        <div class="tl-title">Engenheiro de Sistemas de Aviação</div>
+        <div class="tl-desc">Desenvolvimento de simuladores de voo de alta fidelidade e integração de avionics com hardware de cockpit.</div>
+      </div>
+      <div class="timeline-item">
+        <div class="tl-date">2017 — 2019</div>
+        <div class="tl-title">Desenvolvedor de Software Embarcado</div>
+        <div class="tl-desc">Firmware para controladores de voo em conformidade DO-178C, testes HIL e certificação.</div>
+      </div>
+      <div class="timeline-item">
+        <div class="tl-date">2013 — 2017</div>
+        <div class="tl-title">Bacharelado em Engenharia de Computação</div>
+        <div class="tl-desc">Foco em sistemas embarcados, controle digital e processamento de sinais.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <!-- ÁUDIO INTERATIVO                                              -->
+  <!-- ============================================================= -->
+  <section id="audio" class="hud-box text-center reveal">
+    <div class="corner-bl"></div><div class="corner-br"></div>
+    <span class="section-tag">// Audio Subsystem</span>
+    <h2 class="section-title typewriter-section" data-typetext="Ambientação Sonora">Ambientação Sonora</h2>
+    <p style="color:var(--dim)" class="mb-6 max-w-md mx-auto text-sm">
+      Ative o sintetizador para ouvir o tom ambiente de cockpit que acompanha
+      a visualização orbital 3‑D. Som gerado via Web Audio API.
+    </p>
+    <button class="audio-btn" id="audio-btn">
+      <span class="audio-eq">
+        <span></span><span></span><span></span><span></span><span></span>
+      </span>
+      <span id="audio-label">Ativar Sistema de Áudio</span>
+    </button>
+  </section>
+
+  <!-- ============================================================= -->
+  <!-- FOOTER                                                        -->
+  <!-- ============================================================= -->
+  <footer class="text-center py-10" style="color:var(--dim)">
+    <div class="font-mono text-xs tracking-widest mb-2" style="color:var(--accent-1)">
+      LD://SYS v2.6.0 — TODOS OS SISTEMAS NOMINAIS
+    </div>
+    <div class="text-xs">
+      &copy; 2026 Lasier Darski. Todos os direitos reservados.
+    </div>
+  </footer>
+
+</main>
+
+
+<!-- =================================================================
+     THREE.JS SCENE + PARTÍCULAS REATIVAS (Feature 05)
+     ================================================================= -->
+<script>
+(function() {
+  const canvas = document.getElementById('three-bg');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x0D0F12, 1);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 3000);
+  camera.position.set(0, 0, 300);
+
+  /* ---- Starfield ---- */
+  const STAR_COUNT = 2200;
+  const starGeo = new THREE.BufferGeometry();
+  const starPos = new Float32Array(STAR_COUNT * 3);
+  const starCol = new Float32Array(STAR_COUNT * 3);
+  const origPos = new Float32Array(STAR_COUNT * 3);   /* original positions for reactive return */
+  const starVel = new Float32Array(STAR_COUNT * 3);   /* velocity for reactive movement */
+
+  const palettes = {
+    default:  [new THREE.Color('#00FF66'), new THREE.Color('#00D5FF'), new THREE.Color('#FFC107'), new THREE.Color('#FFFFFF')],
+    infrared: [new THREE.Color('#FF6B35'), new THREE.Color('#FF3D00'), new THREE.Color('#FFAB00'), new THREE.Color('#FFE0B2')],
+    night:    [new THREE.Color('#7C4DFF'), new THREE.Color('#448AFF'), new THREE.Color('#69F0AE'), new THREE.Color('#E0E0E0')],
+  };
+  let currentPalette = 'default';
+
+  function colorizeStars(paletteName) {
+    const pal = palettes[paletteName] || palettes.default;
+    for (let i = 0; i < STAR_COUNT; i++) {
+      const c = pal[Math.floor(Math.random() * pal.length)];
+      starCol[i * 3]     = c.r;
+      starCol[i * 3 + 1] = c.g;
+      starCol[i * 3 + 2] = c.b;
+    }
+    starGeo.attributes.color.needsUpdate = true;
+  }
+
+  for (let i = 0; i < STAR_COUNT; i++) {
+    const x = (Math.random() - 0.5) * 1200;
+    const y = (Math.random() - 0.5) * 1200;
+    const z = (Math.random() - 0.5) * 1200;
+    starPos[i * 3] = x; starPos[i * 3 + 1] = y; starPos[i * 3 + 2] = z;
+    origPos[i * 3] = x; origPos[i * 3 + 1] = y; origPos[i * 3 + 2] = z;
+    starVel[i * 3] = 0; starVel[i * 3 + 1] = 0; starVel[i * 3 + 2] = 0;
+    const c = palettes.default[Math.floor(Math.random() * palettes.default.length)];
+    starCol[i * 3] = c.r; starCol[i * 3 + 1] = c.g; starCol[i * 3 + 2] = c.b;
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  starGeo.setAttribute('color', new THREE.BufferAttribute(starCol, 3));
+
+  const starMat = new THREE.PointsMaterial({
+    size: 1.6,
+    vertexColors: true,
+    sizeAttenuation: true,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.85,
+  });
+  const stars = new THREE.Points(starGeo, starMat);
+  scene.add(stars);
+
+  /* ---- Rings ---- */
+  const ringColors = {
+    default:  [0x00FF66, 0x00D5FF, 0xFFC107],
+    infrared: [0xFF6B35, 0xFF3D00, 0xFFAB00],
+    night:    [0x7C4DFF, 0x448AFF, 0x69F0AE],
+  };
+
+  function createRing(radius, tubeRadius, color, opacity) {
+    const geo = new THREE.TorusGeometry(radius, tubeRadius, 48, 160);
+    const mat = new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity });
+    return new THREE.Mesh(geo, mat);
+  }
+
+  const ring1 = createRing(180, 0.4, 0x00FF66, 0.12);
+  ring1.rotation.x = Math.PI * 0.45; ring1.rotation.y = Math.PI * 0.15;
+  scene.add(ring1);
+
+  const ring2 = createRing(220, 0.3, 0x00D5FF, 0.08);
+  ring2.rotation.x = Math.PI * 0.6; ring2.rotation.y = -Math.PI * 0.25;
+  scene.add(ring2);
+
+  const ring3 = createRing(140, 0.3, 0xFFC107, 0.06);
+  ring3.rotation.x = Math.PI * 0.3; ring3.rotation.y = Math.PI * 0.5;
+  scene.add(ring3);
+
+  const rings = [ring1, ring2, ring3];
+
+  function updateRingColors(mode) {
+    const cols = ringColors[mode] || ringColors.default;
+    rings.forEach((r, i) => r.material.color.setHex(cols[i]));
+  }
+
+  /* ---- Wireframe sphere ---- */
+  const sphereGeo = new THREE.IcosahedronGeometry(80, 2);
+  const sphereMat = new THREE.MeshBasicMaterial({ color: 0x00D5FF, wireframe: true, transparent: true, opacity: 0.045 });
+  const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+  scene.add(sphere);
+
+  /* ---- Mouse (screen + projected 3D) ---- */
+  let mouseX = 0, mouseY = 0;
+  let mouse3D = new THREE.Vector3(0, 0, 0);
+  const raycaster = new THREE.Raycaster();
+  const mouseNDC = new THREE.Vector2(0, 0);
+
+  document.addEventListener('mousemove', (e) => {
+    mouseX = (e.clientX / window.innerWidth  - 0.5) * 2;
+    mouseY = (e.clientY / window.innerHeight - 0.5) * 2;
+    mouseNDC.x =  mouseX;
+    mouseNDC.y = -mouseY;
+    /* project mouse into 3D at z=0 plane */
+    raycaster.setFromCamera(mouseNDC, camera);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+    raycaster.ray.intersectPlane(plane, mouse3D);
+  });
+
+  /* ---- Resize ---- */
+  function onResize() {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', onResize);
+  onResize();
+
+  /* ---- Warp state (Konami) ---- */
+  let warpActive = false;
+  let warpTime = 0;
+  window._triggerWarp = function() {
+    warpActive = true;
+    warpTime = 0;
+  };
+
+  /* ---- Mode switch (exposed globally) ---- */
+  window._setThreeMode = function(mode) {
+    currentPalette = mode === 'default' ? 'default' : mode;
+    colorizeStars(currentPalette);
+    updateRingColors(currentPalette);
+    const sphereCols = { default: 0x00D5FF, infrared: 0xFF3D00, night: 0x448AFF };
+    sphereMat.color.setHex(sphereCols[currentPalette] || 0x00D5FF);
+  };
+
+  /* ---- Animation loop ---- */
+  const REPEL_RADIUS = 120;
+  const REPEL_STRENGTH = 2.5;
+  const RETURN_FACTOR = 0.03;
+  const DAMPING = 0.92;
+
+  function animate() {
+    requestAnimationFrame(animate);
+
+    /* normal rotation */
+    const rotSpeed = warpActive ? 0.005 : 0.00015;
+    stars.rotation.y += rotSpeed;
+    stars.rotation.x += rotSpeed * 0.5;
+
+    ring1.rotation.z += (warpActive ? 0.015 : 0.0006);
+    ring2.rotation.z -= (warpActive ? 0.012 : 0.0004);
+    ring3.rotation.z += (warpActive ? 0.010 : 0.0003);
+
+    sphere.rotation.y += (warpActive ? 0.008 : 0.0004);
+    sphere.rotation.x += (warpActive ? 0.004 : 0.0002);
+
+    /* ---- Feature 05: Particle reactivity ---- */
+    const positions = starGeo.attributes.position.array;
+    /* we work in world space — get inverse of stars' matrix */
+    const invMatrix = new THREE.Matrix4().copy(stars.matrixWorld).invert();
+    const localMouse = mouse3D.clone().applyMatrix4(invMatrix);
+
+    for (let i = 0; i < STAR_COUNT; i++) {
+      const ix = i * 3, iy = i * 3 + 1, iz = i * 3 + 2;
+
+      /* distance to mouse in local space (XY only) */
+      const dx = positions[ix] - localMouse.x;
+      const dy = positions[iy] - localMouse.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < REPEL_RADIUS && dist > 0.1) {
+        const force = (1 - dist / REPEL_RADIUS) * REPEL_STRENGTH;
+        starVel[ix] += (dx / dist) * force;
+        starVel[iy] += (dy / dist) * force;
+      }
+
+      /* return to origin */
+      starVel[ix] += (origPos[ix] - positions[ix]) * RETURN_FACTOR;
+      starVel[iy] += (origPos[iy] - positions[iy]) * RETURN_FACTOR;
+      starVel[iz] += (origPos[iz] - positions[iz]) * RETURN_FACTOR;
+
+      /* damping */
+      starVel[ix] *= DAMPING;
+      starVel[iy] *= DAMPING;
+      starVel[iz] *= DAMPING;
+
+      /* apply */
+      positions[ix] += starVel[ix];
+      positions[iy] += starVel[iy];
+      positions[iz] += starVel[iz];
+    }
+    starGeo.attributes.position.needsUpdate = true;
+
+    /* ---- Warp effect ---- */
+    if (warpActive) {
+      warpTime += 0.016;
+      starMat.size = 1.6 + Math.sin(warpTime * 6) * 3;
+      if (warpTime > 3) {
+        warpActive = false;
+        starMat.size = 1.6;
+      }
+    }
+
+    /* subtle parallax */
+    camera.position.x += (mouseX * 25 - camera.position.x) * 0.02;
+    camera.position.y += (-mouseY * 25 - camera.position.y) * 0.02;
+    camera.lookAt(scene.position);
+
+    renderer.render(scene, camera);
+  }
+  animate();
+})();
+</script>
+
+
+<!-- =================================================================
+     AUDIO SYNTH
+     ================================================================= -->
+<script>
+(function() {
+  const btn = document.getElementById('audio-btn');
+  const label = document.getElementById('audio-label');
+  let ctx, masterGain, oscillators = [], playing = false;
+
+  function buildSynth() {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = ctx.createGain();
+    masterGain.gain.setValueAtTime(0, ctx.currentTime);
+    masterGain.connect(ctx.destination);
+
+    const osc1 = ctx.createOscillator();
+    osc1.type = 'sine'; osc1.frequency.setValueAtTime(48, ctx.currentTime);
+    const g1 = ctx.createGain(); g1.gain.setValueAtTime(0.18, ctx.currentTime);
+    osc1.connect(g1).connect(masterGain); osc1.start(); oscillators.push(osc1);
+
+    const osc2 = ctx.createOscillator();
+    osc2.type = 'triangle'; osc2.frequency.setValueAtTime(96, ctx.currentTime); osc2.detune.setValueAtTime(7, ctx.currentTime);
+    const g2 = ctx.createGain(); g2.gain.setValueAtTime(0.06, ctx.currentTime);
+    osc2.connect(g2).connect(masterGain); osc2.start(); oscillators.push(osc2);
+
+    const osc3 = ctx.createOscillator();
+    osc3.type = 'sine'; osc3.frequency.setValueAtTime(440, ctx.currentTime);
+    const g3 = ctx.createGain(); g3.gain.setValueAtTime(0.008, ctx.currentTime);
+    osc3.connect(g3).connect(masterGain); osc3.start(); oscillators.push(osc3);
+
+    masterGain.gain.linearRampToValueAtTime(0.25, ctx.currentTime + 1.5);
+  }
+
+  function teardownSynth() {
+    if (!ctx) return;
+    masterGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
+    setTimeout(() => {
+      oscillators.forEach(o => { try { o.stop(); } catch(_){} });
+      oscillators = []; ctx.close(); ctx = null;
+    }, 900);
+  }
+
+  btn.addEventListener('click', () => {
+    if (!playing) {
+      buildSynth(); label.textContent = 'Desativar Sistema de Áudio'; btn.classList.add('playing'); playing = true;
+    } else {
+      teardownSynth(); label.textContent = 'Ativar Sistema de Áudio'; btn.classList.remove('playing'); playing = false;
+    }
+  });
+})();
+</script>
+
+
+<!-- =================================================================
+     FEATURE 02 — HUD CURSOR
+     ================================================================= -->
+<script>
+(function() {
+  const cursor = document.getElementById('hud-cursor');
+  const coords = document.getElementById('cursor-coords');
+
+  document.addEventListener('mousemove', (e) => {
+    cursor.style.left = e.clientX + 'px';
+    cursor.style.top  = e.clientY + 'px';
+    const cx = String(Math.round(e.clientX)).padStart(4, '0');
+    const cy = String(Math.round(e.clientY)).padStart(4, '0');
+    coords.textContent = 'X:' + cx + ' Y:' + cy;
+  });
+
+  document.addEventListener('mouseleave', () => { cursor.style.opacity = '0'; });
+  document.addEventListener('mouseenter', () => { cursor.style.opacity = '1'; });
+})();
+</script>
+
+
+<!-- =================================================================
+     FEATURE 04 — TYPEWRITER
+     ================================================================= -->
+<script>
+(function() {
+  /* Hero typewriter */
+  function typewrite(el, callback) {
+    const text = el.getAttribute('data-text');
+    el.textContent = '';
+    el.style.width = 'auto';
+    let i = 0;
+    const speed = 55;
+    function tick() {
+      if (i <= text.length) {
+        el.textContent = text.substring(0, i);
+        i++;
+        setTimeout(tick, speed);
+      } else {
+        el.classList.add('done');
+        if (callback) callback();
+      }
+    }
+    tick();
+  }
+
+  /* Start hero sequence after small delay */
+  setTimeout(() => {
+    const heroName = document.getElementById('hero-name');
+    typewrite(heroName, () => {
+      const heroSub = document.getElementById('hero-subtitle');
+      typewrite(heroSub, () => {
+        document.getElementById('hero-tags').style.opacity = '1';
+      });
+    });
+  }, 600);
+
+  /* Section titles typewriter on scroll */
+  const sectionTitles = document.querySelectorAll('.typewriter-section');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting && !entry.target.classList.contains('typed')) {
+        entry.target.classList.add('typed');
+        const text = entry.target.getAttribute('data-typetext');
+        const el = entry.target;
+        el.textContent = '';
+        let i = 0;
+        function tick() {
+          if (i <= text.length) {
+            el.textContent = text.substring(0, i);
+            i++;
+            setTimeout(tick, 40);
+          }
+        }
+        tick();
+      }
+    });
+  }, { threshold: 0.5 });
+  sectionTitles.forEach(el => observer.observe(el));
+})();
+</script>
+
+
+<!-- =================================================================
+     FEATURE 06 — KONAMI CODE EASTER EGG
+     ================================================================= -->
+<script>
+(function() {
+  const code = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight'];
+  let pos = 0;
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === code[pos]) {
+      pos++;
+      if (pos === code.length) {
+        pos = 0;
+        activateEasterEgg();
+      }
+    } else {
+      pos = 0;
+    }
+  });
+
+  function activateEasterEgg() {
+    /* Flash overlay */
+    const flash = document.createElement('div');
+    flash.className = 'warp-flash';
+    document.body.appendChild(flash);
+    setTimeout(() => flash.remove(), 3200);
+
+    /* Toast message */
+    const toast = document.createElement('div');
+    toast.className = 'konami-toast';
+    toast.textContent = '▸ WARP DRIVE ENGAGED — HOLD ON, PILOT ◂';
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3200);
+
+    /* Trigger Three.js warp */
+    if (window._triggerWarp) window._triggerWarp();
+  }
+})();
+</script>
+
+
+<!-- =================================================================
+     FEATURE 07 — MODE TOGGLE
+     ================================================================= -->
+<script>
+(function() {
+  const modes = ['default', 'infrared', 'night'];
+  const labels = { default: 'RADAR', infrared: 'INFRARED', night: 'NIGHT VIS' };
+  let idx = 0;
+
+  const btn = document.getElementById('mode-btn');
+  const lbl = document.getElementById('mode-label');
+
+  btn.addEventListener('click', () => {
+    idx = (idx + 1) % modes.length;
+    const mode = modes[idx];
+    document.body.setAttribute('data-mode', mode);
+    lbl.textContent = labels[mode];
+    if (window._setThreeMode) window._setThreeMode(mode);
+  });
+})();
+</script>
+
+
+<!-- =================================================================
+     FEATURE 12 — METRIC COUNTERS
+     ================================================================= -->
+<script>
+(function() {
+  const counters = document.querySelectorAll('.metric-value[data-count-to]');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting && !entry.target.dataset.counted) {
+        entry.target.dataset.counted = 'true';
+        animateCounter(entry.target);
+      }
+    });
+  }, { threshold: 0.5 });
+
+  counters.forEach(el => observer.observe(el));
+
+  function animateCounter(el) {
+    const target = parseFloat(el.dataset.countTo);
+    const suffix = el.dataset.suffix || '';
+    const decimals = parseInt(el.dataset.decimals || '0', 10);
+    const duration = 2000;
+    const start = performance.now();
+
+    function tick(now) {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / duration, 1);
+      /* easeOutExpo */
+      const ease = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+      const current = target * ease;
+      el.textContent = current.toFixed(decimals) + suffix;
+      if (progress < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+})();
+</script>
+
+
+<!-- =================================================================
+     SCROLL REVEAL + SKILL BARS + NAV BEHAVIOR
+     ================================================================= -->
+<script>
+(function() {
+  /* Scroll reveal */
+  const revealEls = document.querySelectorAll('.reveal');
+  const revObs = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.12 });
+  revealEls.forEach(el => revObs.observe(el));
+
+  /* Skill bars */
+  const skillFills = document.querySelectorAll('.skill-fill');
+  const skillObs = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.style.width = e.target.dataset.width + '%'; });
+  }, { threshold: 0.3 });
+  skillFills.forEach(el => skillObs.observe(el));
+
+  /* Nav hide on scroll down */
+  let lastScroll = 0;
+  const navbar = document.getElementById('navbar');
+  window.addEventListener('scroll', () => {
+    const st = window.pageYOffset;
+    navbar.classList.toggle('hidden-nav', st > lastScroll && st > 80);
+    lastScroll = st;
+  });
+
+  /* Active nav link */
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('.nav-link');
+  window.addEventListener('scroll', () => {
+    let current = '';
+    sections.forEach(s => { if (window.pageYOffset >= s.offsetTop - 100) current = s.id; });
+    navLinks.forEach(l => {
+      l.classList.toggle('active', l.getAttribute('href') === '#' + current);
+    });
+  });
+})();
+</script>
+
+</body>
+</html>
